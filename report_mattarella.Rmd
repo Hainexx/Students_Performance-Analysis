@@ -1,0 +1,1007 @@
+---
+title: "Student Performance Analysis Or (What To Infer from Final Grades)"
+author: "Gaspare Mattarella"
+date: "6/14/2021"
+output:
+  html_document: 
+    toc: yes
+    theme: spacelab
+    fig_caption: yes
+    keep_md: yes
+  pdf_document: 
+    toc: yes
+    fig_crop: no
+    number_sections: yes
+    keep_tex: yes
+---
+
+```{=tex}
+\begin{abstract}
+In this paper we are going to perform a cluster analysis on a dataset used for a 
+market basket analysis. Our goal is to find unknown subgroups in the dataset.
+
+First we are going to explore the dataset with boxplots. Then we are going to apply a hierarchical clustering, to have a clearer idea of how many subgroups can exists. Finally, we are going to apply the K-means algorithm, having in mind the structure of our dataset.
+
+\end{abstract}
+```
+# PART I: SUPERVISED LEARNING
+
+## Introduction
+
+In this analysis I am going to dive into Portuguese public education trying to predict and infer secondary school students performance. In Portugal, the secondary education consists of 3 years of schooling, preceding 9 years of basic education and followed by higher education. Most of the students join the public and free education system. There are several courses (e.g. Sciences and Technologies, Visual Arts) that share core subjects such as the Portuguese Language and Mathematics, subjects on which the dataset is constructed. A 20-point grading scale is used, where 0 is the lowest grade and 20 is the perfect score. During the school year, students are evaluated in three periods and the last evaluation (G3 of Table 1) corresponds to the final grade.
+
+The database, that can be retrieved at the following [link](https://archive.ics.uci.edu/ml/datasets/student+performance), was built from two sources: school reports, based on paper sheets and including few attributes (i.e. the three period grades and number of school absences); and questionnaires, used to complement the previous information.
+
+Here a brief description of the variables in the dataset:
+
+Table 1
+
+1.  school - student's school (binary: "GP" - Gabriel Pereira or "MS" - Mousinho da Silveira)
+
+2.  sex - student's sex (binary: "F" - female or "M" - male)
+
+3.  age - student's age (numeric: from 15 to 22)
+
+4.  address - student's home address type (binary: "U" - urban or "R" - rural)
+
+5.  famsize - family size (binary: "LE3" - less or equal to 3 or "GT3" - greater than 3)
+
+6.  Pstatus - parent's cohabitation status (binary: "T" - living together or "A" - apart)
+
+7.  Medu - mother's education (numeric: 0 - none, 1 - primary education (4th grade), 2 -- 5th to 9th grade, 3 -- secondary education or 4 -- higher education)
+
+8.  Fedu - father's education (numeric: 0 - none, 1 - primary education (4th grade), 2 -- 5th to 9th grade, 3 -- secondary education or 4 -- higher education)
+
+9.  Mjob - mother's job (nominal: "teacher", "health" care related, civil "services" (e.g. administrative or police), "at_home" or "other")
+
+10. Fjob - father's job (nominal: "teacher", "health" care related, civil "services" (e.g. administrative or police), "at_home" or "other")
+
+11. reason - reason to choose this school (nominal: close to "home", school "reputation", "course" preference or "other")
+
+12. guardian - student's guardian (nominal: "mother", "father" or "other")
+
+13. traveltime - home to school travel time (numeric: 1 - \<15 min., 2 - 15 to 30 min., 3 - 30 min. to 1 hour, or 4 - \>1 hour)
+
+14. studytime - weekly study time (numeric: 1 - \<2 hours, 2 - 2 to 5 hours, 3 - 5 to 10 hours, or 4 - \>10 hours)
+
+15. failures - number of past class failures (numeric: n if 1\<=n\<3, else 4)
+
+16. schoolsup - extra educational support (binary: yes or no)
+
+17. famsup - family educational support (binary: yes or no)
+
+18. paid - extra paid classes within the course subject (Math or Portuguese) (binary: yes or no)
+
+19. activities - extra-curricular activities (binary: yes or no)
+
+20. nursery - attended nursery school (binary: yes or no)
+
+21. higher - wants to take higher education (binary: yes or no)
+
+22. internet - Internet access at home (binary: yes or no)
+
+23. romantic - with a romantic relationship (binary: yes or no)
+
+24. famrel - quality of family relationships (numeric: from 1 - very bad to 5 - excellent)
+
+25. freetime - free time after school (numeric: from 1 - very low to 5 - very high)
+
+26. goout - going out with friends (numeric: from 1 - very low to 5 - very high)
+
+27. Dalc - workday alcohol consumption (numeric: from 1 - very low to 5 - very high)
+
+28. Walc - weekend alcohol consumption (numeric: from 1 - very low to 5 - very high)
+
+29. health - current health status (numeric: from 1 - very bad to 5 - very good)
+
+30. absences - number of school absences (numeric: from 0 to 93)
+
+31. G1 - first period grade (numeric: from 0 to 20)
+
+32. G2 - second period grade (numeric: from 0 to 20)
+
+33. G3 - final grade (numeric: from 0 to 20, output target)
+
+```{r setup, include=FALSE, echo=FALSE, warning=FALSE,error=FALSE,fig.align = "center"}
+knitr::opts_chunk$set(echo = FALSE
+                      #,warning=FALSE,
+                      # message=FALSE
+                      )
+extrafont::loadfonts()
+# remotes::install_github("easystats/easystats")
+library(tidyverse)
+library(sandwich)
+library(readr)
+library(corrplot)
+library(easystats)
+library(hrbrthemes)
+library(Hmisc)
+library(GoodmanKruskal)
+library(ggraph) 
+library(glmnet)
+library(caret)
+library(ggpubr)
+library(olsrr)
+library(GGally)
+library(mltools)
+library(data.table)
+library(multcomp)
+library(car)
+library(MASS)
+library(lmtest)
+library(doParallel)
+source('data/funct/unregister_dopar.R')
+df <- read_csv("data/student.csv")
+```
+
+In the table below we can observe the distribution of all the numeric variable, check that there are no missing values, check for anomalies in the range of the data or in their mean and standard deviation. For what we can see, everything is in the right place.
+
+```{r bank}
+df$sex <- as.factor(df$sex)
+df$address<- as.factor(df$address)
+df$famsize<- as.factor(df$famsize)
+df$Pstatus <- as.factor(df$Pstatus)
+df$Mjob<- as.factor(df$Mjob)
+df$Fjob<- as.factor(df$Fjob)
+df$reason<- as.factor(df$reason)
+df$guardian<- as.factor(df$guardian)
+df$schoolsup<- as.factor(df$schoolsup)
+df$famsup<- as.factor(df$famsup)
+df$paid<- as.factor(df$paid)
+df$activities<- as.factor(df$activities)
+df$nursery<- as.factor(df$nursery)
+df$higher <- as.factor(df$higher)
+df$internet <- as.factor(df$internet)
+df$romantic <- as.factor(df$romantic)
+df$school <- NULL
+G1 <- df$G1
+G2 <- df$G2
+
+describe_distribution(df) # numeric variables
+```
+
+Something I want to be highlighted is that the three grades variables (G1,G2,G3) have very similar ranges, mean and standard deviation. Not that it is unexpected but it is definitely a problem. Trying to predict the final grade (G3) using also G1 and G2 as predictors among the others will likely lead to excellent performances altought it is indeed like cheating. That's why I am going to deal with that in a few lines. First, let's make us acquainted with the data.
+
+## Exploratory Data Analysis
+
+From the first two images, that relate parents' occupation with the presence of family support, we can see that when it comes to fathers at home, teachers but especially in healthcare, family support is much more predominant than in the others. Same thing for mothers with a more balance for mothers at home and a little bit more for mothers in services. Third image shows us that for kids with family support is more likely to receive extra paid classes. Fourth image shows instead that there is almost no difference for kids who lives in rural and urban area to partecipate extra curricular activities. Surprisingly, I must admit.
+
+```{r pressure, echo=F, error=FALSE, fig.align='center', warning=FALSE,fig.width=7}
+a <- ggplot(df,
+       aes(x = Fjob,
+           fill = famsup)) +
+  geom_bar(position = "stack")
+
+b <- ggplot(df,
+       aes(x = Mjob,
+           fill = famsup)) +
+  geom_bar(position = "stack")
+
+c <- ggplot(df,
+       aes(x = famsup,
+           fill = paid)) +
+  geom_bar(position = "fill") +
+            labs(y = "Proportion")
+d <- ggplot(df,
+       aes(x = activities ,
+           fill = address)) +
+  geom_bar(position = "fill") +
+            labs(y = "Proportion")
+s <- ggarrange(a,b,c,d,
+          labels = c("A", "B", "C","D"),
+          ncol = 2, nrow = 2)
+
+annotate_figure(s,
+                top = text_grob("", color = "black", face = "bold", size = 14),
+                fig.lab = "Figure 1", fig.lab.face = "bold")
+```
+
+In the next set of images we can spot the relations between the parents' job and kid's final grade. For Mother's occupation, it is clear that 'at home' mothers seems to have the smaller mean and smaller variance. We can move orderly trough higher mean and higher variance with other, services, teachers and finally, with an elegant skew to the right, healthcare. For what it concerns father's job, we can instead note an overlapping of all the occupation, altought with different variability, except for teachers, which again present a clear skew to the right. Third image shows us that kids who live in urban areas have slightly higher means and thinner tails to the left of the distribution. Almost an identical picture we can observe when it comes to having or not internet at home.
+
+```{r fig, fig.align = "center", fig.width=9}
+
+annotate_figure(ggarrange(ggplot(data=df, aes(x=G3, group=Mjob, fill=Mjob)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_ipsum(base_family = 'Helvetica')
+    ,ggplot(data=df, aes(x=G3, group=Fjob, fill=Fjob)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_ipsum(base_family = 'Helvetica')
+    ,ggplot(data=df, aes(x=G3, group=address, fill=address)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_ipsum(base_family = 'Helvetica')
+    ,ggplot(data=df, aes(x=G3, group=internet, fill=internet)) +
+    geom_density(adjust=1.5, alpha=.4) +
+    theme_ipsum(base_family = 'Helvetica'),
+    labels = c("A", "B", "C","D")),
+                top = text_grob(" ", color = "black", face = "bold", size = 14),
+                fig.lab = "Figure 2", fig.lab.face = "bold")
+```
+
+Another image worth of mention, the below one, highlights the relation between failures and high grades. This will be important in later analysis. Before going further in exploration, we need to address the problem of response variable and the intermediate grades. As mentioned before, the three grades are *extremely* correlated and including G1 and/or G2 as predictors could be somehow useless to our scope, i.e. infer which among our regressors are statistically significant in explaining the variance of student performance. My is the following: I won't throw away G1 and G2 because they still may contain valuable information, instead I will take the average between all of them creating in so a new variable which represents the general performance of the student, not linked to a particular period of time. Then I will apply a BoxCox transformation to the variable that we will, from now on, simply call *y* just to obtain a normal distribution of the response variable.
+
+```{r fig.align='center'}
+ggplot(data = df) +
+  geom_count(mapping = aes(x = G3, y = failures))+
+  theme_ipsum(base_family = 'Helvetica')
+```
+
+```{r}
+df <- df %>% 
+            mutate(y = round((G1+G2+G3)/3,1), .keep = 'unused')
+
+BoxCoxTrans(df$y)
+df$y <- df$y^1.3
+```
+
+The "normalization" of the response variable is a prerequisite for the analysis of variance we're going to perform on the data. In the following table we can see the density plot and an overlaying normal distribution.
+
+```{r,fig.align='center'}
+ggdensity(df, x = "y", fill = "lightblue", title = "General Grade") +
+  stat_overlay_normal_density(color = "red", linetype = "dashed")
+```
+
+```{r}
+leveneTest(y~Mjob,data = df)
+```
+
+The other prerequisite is the homogeneity of variance across groups that we're going to test with a Levene Test. We prefer a robust Levene test to a classic Bartlett because the latter is sensitive to lack of normality.
+
+```{r warning=FALSE,echo=FALSE,message=FALSE}
+mjob <- aov(y~Mjob,data = df)
+posthoc = glht(mjob, linfct = mcp(Mjob = "Tukey"))
+summary(corrected <- posthoc, test = adjusted(type = "bonferroni"))
+```
+
+To test for more than 2 groups we need to remember that regular p-values will be meaningless and that we need to perform a Multiple Comparisons of Means, then we must proceed with a Bonferroni correction of the p-values. From table and plot above we can see how the differences between the specif jobs and "at home" are all statistically significant while they're not different between them nor with "other" with the exception of "teacher".
+
+```{r fig.width=4}
+leveneTest(y~Fjob,data = df)
+fjob <- aov(y~Fjob,data = df)
+posthoc2 = glht(fjob, linfct = mcp(Fjob = "Tukey"))
+summary(corr <- posthoc2,test = adjusted(type = "bonferroni"))
+```
+
+For what it concerns father's job, the only significant difference comes from the "teacher" group with all the rest except that for "health". Same thing we do for the reason variable, observing that "reputation" is actually significantly different from the other values.
+
+```{r}
+reas <- aov(y~reason,data = df)
+posthoc3 = glht(reas, linfct = mcp(reason = "Tukey"))
+summary(posthoc3,test = adjusted(type = "bonferroni"))
+
+inter <- aov(y~internet,data = df)
+summary(inter)
+
+addr <- aov(y~address,data = df)
+summary(addr)
+
+```
+
+We can say the same thing for the binary classes "internet" and "address".
+
+In the figure below we can see the correlation matrix between all the numerical variables. The spaces left blank are statistically insignificant.
+
+```{r include=FALSE}
+corrplo <- df %>%
+  correlation() %>%
+  summary() 
+
+library(Hmisc)
+library(corrplot)
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+r <- append (corrplo$Parameter, 'y')
+r <- r[-c(11)]
+
+res2<-rcorr(as.matrix(df[r]))
+flattenCorrMatrix(res2$r, res2$P)
+```
+
+We can see that variable most correlated with our response variable is "failures". "famrel" is the only one not statistically significant and "Medu" and "Fedu" seems pretty correlated too. Also note how strongly they are correlated between them.
+
+```{r fig.align='center'}
+# Insignificant correlations are leaved blank
+corrplot::corrplot(res2$r, type="upper", 
+         p.mat = res2$P, insig = "blank",diag = F, tl.col = 'black')
+```
+
+In the next image we can instead explore the "partial" correlation between the same variables which, by definition, is the correlation of two variables while controlling for a third or more other variables. Here the effect of Fedu and Medu on the response variable seems to be less than before. Same power for "failures" instead.
+
+```{r fig.align='center'}
+df[r] %>%
+  correlation(partial = T) %>%
+  plot()
+```
+
+In the table below we present the transformed data. The categorical variables with more than 2 classes were *One-Hot* encoded so that we now have only numerical variables.
+
+```{r}
+multiple = c("Fjob", "Mjob", "reason")
+
+binary = c("sex",'address','higher',"famsize", "Pstatus", "schoolsup", "famsup", "paid", "activities", "internet", "romantic")
+
+for (col in binary) {
+  df[col] <- as.numeric(unlist(df[col]))
+}
+df[binary] <- ifelse(df[binary] == 1,0,1)
+
+one_hot_enc <- as.data.frame(one_hot(as.data.table(df[multiple])))
+
+enc_df <- df[,!(names(df) %in% multiple)]
+enc_df <- enc_df[,!(names(enc_df) %in% c('guardian','nursery'))]
+
+one_hot_enc <- one_hot_enc[,!(names(one_hot_enc) %in% c('Fjob_other','Mjob_other','reason_other'))] # drop the baselines cat, the ones less interpretable
+one_hot_enc_alter <- one_hot_enc[,!(names(one_hot_enc) %in% c('Fjob_health','Fjob_services','Fjob_at_home','Mjob_at_home','Mjob_services','reason_course','reason_home'))] # drop the baselines cat, the ones less interpretable
+
+data <- cbind(one_hot_enc,enc_df)
+data_altern <- cbind(one_hot_enc_alter,enc_df)
+data_altern$Walc <- NULL
+describe_distribution(data)
+```
+
+## Modeling
+
+Now that we are more familiar with the data and the relations between them, we can actually proceed modeling them and trying to gain some additional information.
+
+We can actually create a model in 3 different ways
+
+1.  Binary classification\
+
+    -   y \> 10: pass\
+    -   y \< 10: fail
+
+2.  five-level classification based on Erasmus grade conversion system\
+
+    -   16-20: very good\
+    -   14-15: good\
+    -   12-13: satisfactory\
+    -   10-11: sufficient\
+    -   0-9 : fail
+
+3.  Regression (Predicting y)
+
+Now, the real question is: what do we want from this? Do we want to classify and predict whether a kid is going to pass or fail the exam? It might actually be useful for social services and people whose job is to prevent kids from failing, intervening in the right moment. Do we need to classify and predict who's going to be very good rather than who's going to be sufficient at best? Maybe yes, just like above.
+
+What I personally am more interested in is the third option. I find extremely important trying to clarify and infer the precise effect of every variable we have and that's the reason I am going to go with Linear Regression first so that we begin with the highest level of interpretability and just than trying to dive into more complex models.
+
+### Baseline Model - Simple Linear Regression
+
+First thing first, we split the dataset in a train and a test set (80%/20%)
+
+```{r traintest}
+set.seed(30)
+split_train_test <- createDataPartition(y = data$y, p=0.8, list = F)
+train <- data[split_train_test,]
+test <-  data[-split_train_test,]
+dim(test)
+dim(train)
+```
+
+Now we run a Linear Regression with all the variables we dispone. Than we check the model assumptions.
+
+```{r,fig.align='center'}
+model <- lm(y ~., train)
+check_model(model)
+```
+
+From this graphical check, everything seems to be ok except maybe for a little heteroskedasticity of the variance. We hence check all of them with the proper tests.
+
+```{r}
+check_normality(model)
+check_heteroscedasticity(model)
+check_autocorrelation(model)
+check_collinearity(model)
+```
+
+The model appears to be fine for what it concerns Autocorrelation of the residuals and Multicollinearity. Hypothesis of Normality of the residuals and Homoscedasticity were instead rejected. Normality of the residuals is actually not a real problem since our sample is big enough to use the properties of the Central Limit Theory and from the graph we could spot how *not* severe this normality is. We will instead address Heteroscedasticity with proper robust standard errors from now.
+
+```{r}
+plot(model, which = 4)
+```
+
+Here above we checked for outliers with the Cook's distance. We can spot that other than 3/5 evident severe outliers there are also a lot of mild outliers. That's why we will ignore them for now and take care of this problem later on with a Robust Regression.
+
+### Inference
+
+Below we can observe the coefficients with Robust Standard Errors obtained through White's estimator. We have an intercept that is very significant, Father's job "teacher" has a pretty high coefficient of 3.2 and togheter with "services" that is instead negative they both are significant as previewsly seen. For Mother'job, as we already know, working in "health" has a pretty high coefficient too and still significant. Also "services". Next we have famsize, basically having siblings seems to be positive and significant. Furthermore, we note studytime that is positive and significant and, as we already knew, failures that has the highest coefficient so far and it is very significative. The following variables sems to be a clear case of "Spurious Correlation" since School Support is higly negative and significative. It doesn't of course suggest that receiving schooling support worsen performance but that all the people receiving it probably have previus difficulties. Same thing for the ones who receive "paid" extra lessons. Not shocking at all, the desire to continue higher studies is super positive and significant. Strange result is instead the significance of being in a sentimental relation and that being negative. It appears that kids going out a lot have significantlly worse performance and, unexplainable enough, health status seems to have a negative and significant effect on performance.
+
+```{r}
+lmtest::coeftest(model, vcov. = vcovHC, type = "HC1")
+```
+
+```{r}
+performance(model)
+```
+
+One thing we should notice is that the ratio between significant and unsignificant variables is quite even, meaning that we're feeding our model with a lot of useless information. That's why in the next section we are going to perform an automatic feature selection with the help of two of the most efficient methods, a mix of forward and back stepwise selection and the LASSO.
+
+### Stepwise Selection
+
+The following model automatically select the best variables performing both a forward and a backward stepwise selection. We can in fact observe how the number of variables drastically decreased and that now they appear to be almost all significant (standard errors are, again, computed robustly).
+
+```{r}
+m_stepwise <- lm(y ~., train)
+m_stepwise <- select_parameters(m_stepwise) 
+coeftest(m_stepwise,vcov. = vcovHC, type = "HC1")
+```
+
+The only few noticeable differences concern the address var that is now significant being positive for kid kids who lives in urban areas. Mother education level is now positive and significant and so is having acces to internet at home. Everything else is pretty much the same.
+
+```{r}
+check_model(m_stepwise)
+```
+
+```{r}
+check_normality(m_stepwise)
+check_heteroscedasticity(m_stepwise)
+check_autocorrelation(m_stepwise)
+check_collinearity(m_stepwise)
+```
+
+let's always check the model assumption. As expected, same problems as before. Same solutions.
+
+### LASSO
+
+Let's go forward to a more sophisticated method to select variables, the LASSO.
+
+```{r}
+x = as.matrix(train[,-36])
+y = train$y
+```
+
+Here we can see the plot of the minimum log($\lambda$) selected through cross validation on the training set.
+
+```{r}
+m_cvlasso=cv.glmnet(x,y)
+plot(m_cvlasso)
+```
+
+Below we spot instead the regressors selected with that particular $\lambda$. Note that the regressors are more than the stepwise selected.
+
+```{r}
+coef <- coef(m_cvlasso, s = m_cvlasso$lambda.min)
+coefname <- coef@Dimnames[[1]][-1]
+coef <- coefname[coef@i]
+coef
+```
+
+Let's indeed recheck the model as always.
+
+```{r}
+fmla <- as.formula(paste("y ~ ", paste(coef, collapse = "+")))
+lasso <- lm(fmla, data=train)
+check_model(lasso)
+```
+
+```{r}
+check_normality(lasso)
+check_heteroscedasticity(lasso)
+check_autocorrelation(lasso)
+check_collinearity(lasso)
+```
+
+Once again let's plot the the coefficients with robust standard errors:
+
+```{r}
+
+coeftest(lasso, vcov. = vcovHC, type='HC1')
+```
+
+The scheme looks more like our OLS baseline model than the stepwise. I won't comment further this output since no relevant difference or surprise is spotted.
+
+## Linear Models Comparison
+
+Now that we have assessed the three models of ours, we can proceed in comparing their performance and choose the best one. In the table below we can observe various metrics to compare their performances. There is also a "Performance Score" which ranges from 0% to 100%. Higher values indicating better model performance. Note that all score value do not necessarily sum up to 100%. Rather, calculation is based on normalizing all indices (i.e. rescaling them to a range from 0 to 1), and taking the mean value of all indices for each model. This is a rather quick heuristic, but might be helpful as exploratory index.
+
+```{r}
+compare_performance(model,lasso,m_stepwise,rank = T)
+```
+
+From the table above we can say that the three models performs very similarly but our PerformanceScore still indicates a clear ranking between 'em, positioning the LASSO on the podium, followed by the stepwise selection and lastly by the basic OLS. We can also visualize this in the spider web below.
+
+```{r, fig.align='center'}
+plot(compare_performance(model,lasso,m_stepwise,rank = T))
+```
+
+### Robust Model
+
+Now that we have assessed the best model, we can proceed trying to elaborate a Robust Linear Regression (for outliers) on the LASSO model and finally compare them. We will use Bisquare weights instead of the standard Hubers one because they're more penalizing for large outliers, as it seemed we had.
+
+```{r}
+robust <- rlm(fmla,data=train, psi = psi.bisquare) # more penalizing than standard huber one
+```
+
+Below we have the weight our robust regression assigned to the observations. Since the weights range from [0,1], we can see how the first 10 most penalized observations were considered severe outliers from the algorithm.
+
+```{r}
+hweights <- data.frame(resid = robust$resid, weight = robust$w)
+hweights2 <- hweights[order(robust$w),]
+hweights2[1:10,]
+```
+
+### Full Comparison
+
+Finally we compare all the models with all the coefficient side by side (all the SE are computed robustly).
+
+```{r Table comparison, error=FALSE, message=FALSE, warning=FALSE, paged.print=TRUE}
+rob_se_pan <- list(sqrt(diag(vcovHC(model, type = "HC1"))),
+                   sqrt(diag(vcovHC(m_stepwise, type = "HC1"))),
+                   sqrt(diag(vcovHC(lasso, type = "HC1"))),
+                   sqrt(diag(vcovHC(robust, type = "HC1")))
+                   )
+
+# stargazer::stargazer(model, m_stepwise, lasso, robust,
+#                      type = 'text',
+#                      digits = 2,
+#                      dep.var.labels.include = F,
+#                      omit.table.layout = "n",
+#                      header = F, 
+#                      column.labels = c('Baseline OLS', 'Stepwise', 'Lasso', "Robust"),
+#                      se = rob_se_pan)
+
+```
+
+From the table above we can learn some few takeaways. - The four models' performances do not differ too much altough our model performances comparison above clearly chose the LASSO as the best one. - There seems to be a certain unanimity among the models for what variables are most significant in explain the variance in Students' performances. - Comparing the Robust Regression with its regular counterpart, the LASSO, we can spot the difference in the coefficients' estimates. Although we used the most penalizing weights, those differences between coefficients are way smaller than I expected.
+
+We can finally affirm the following for what it concerns our inference process: The parents' occupation is highly significant in explaining the variability of the student performance. Particularly, teachers fathers and mothers in health and services have a very positive impact on performance. Fathers in services have a negative effect instead. Also having siblings has a positive and unanimously significant effect on performance. Study time, failures and School supports as well as Paid are three of the always significant variables that help us explain well the variability of our model but we've already talked about them. Willingness to continue studiesis, as previusly seen, always significant and very positive although the robust coefficient is significantlly lower than the others. Same thing for being in a romantic relation and going out a lot. Having internet at home appear significant only for the stepwise and the robust so we give it for good. Again Health is negative and significant troughout all the models but with a smaller coefficient in the robust one. Finally, "absences" appear to be negative and significant only for the robust model but with a very low effect on the performance.
+
+\newpage
+
+## Beyond Linear Regression
+
+Now that we are done with the inference effort, we are going to move toward models with less interpretability power but with more predictive one. In this section we're going to explore new alternatives that may capture in our data also non-linearity and interactions between our variables and then compare their performance:
+
+We're going to use a Decision Tree and finally a Random Forests.
+
+### Decision Tree
+
+We proceed with a Decision Tree, trained on train set on which a cross validation with 10 folds is applied to tune the complexity parameter.
+
+```{r fig.align='center'}
+
+cntr <- caret::trainControl(method = 'cv',
+                            number = 10,
+                            search = 'grid')
+
+#### Comment the code to obtain the algo just because I saved it as an Rds file and load it automatically, 
+#### it's faster this way ####
+
+# tree <- caret::train(y~.,
+#                      data = train,
+#                      method = "rpart",
+#                      trControl = cntr,
+#                      tuneLength = 50)
+
+#saveRDS(tree, "rpar_model.rds")
+
+tree <- readRDS("rpar_model.rds")
+plot(tree)
+print(round(tree$bestTune[[1]],5))
+```
+
+We further proceed with a complexity parameter of 0.01039.
+
+```{r}
+train_pred = predict(tree, newdata = train)
+test_pred = predict(tree, newdata = test)
+
+print(paste0('Training RMSE: ', (rmse(train$y,train_pred)),'  ',
+             'Test RMSE: ', (rmse(test$y, test_pred)),'  ',
+             'Training MAE: ', (mae(train$y,train_pred)),'  ',
+             'Test MAE: ', (mae(test$y, test_pred))
+             )
+      )
+
+TREE <- c(rmse(test$y, test_pred), mae(test$y, test_pred), R2(train$y, train_pred))
+```
+
+We then compute the Root Mean Square Error (RMSE) and the Mean Absolute Error (MAE) both for the training set and the test test. The relevant ones are of course only the test ones but in doing so, we can make sure that our model did not underfit/overfit.
+
+MAE measures the average magnitude of the errors in a set of predictions, without considering their direction. It's the average over the test sample of the absolute differences between prediction and actual observation where all individual differences have equal weight.
+
+The RMSE is the standard deviation of the residuals (prediction errors). Residuals are a measure of how far from the regression line data points are; RMSE is a measure of how spread out these residuals are. In other words, it tells you how concentrated the data is around the line of best fit.
+
+Taking the square root of the average squared errors has some interesting implications for RMSE. Since the errors are squared before they are averaged, the RMSE gives a relatively high weight to large errors. This means the RMSE should be more useful when large errors are particularly undesirable.
+
+```{r}
+library(rattle)
+
+fancyRpartPlot(tree$finalModel)
+```
+
+-   Interestingly enough, we can spot that "Failures" is consider the best discriminant variables, followed by absences - which, I recall, was found significant only in the final robust model - and the willingness to pursue higher studies.
+-   Other interesting point is that it did not included any of the parent's occuppation but only Mother's education and Daily Alchol consume. Two variables never significant in our previous models.
+
+### Random Forest
+
+Finally we are going to dive into a random forest algorithm. The RF is trained always on training data, and it makes use of 50 Bootstraps to select the correct number of variables to include for each tree. We created a grid with 9 values with mean $\sqrt(nvars)$ and standard deviation 3.5 to choose from.
+
+```{r , warning=FALSE, error=FALSE}
+
+# cl <- makePSOCKcluster(7)
+# registerDoParallel(cl)
+
+
+cntr <- trainControl(method = 'boot_all',
+                              number = 50)
+
+tunegrid <- expand.grid(.mtry=rnorm(9,mean=sqrt(length(train))+3,sd=3.5))
+
+#### Comment the code to obtain the algo just because I saved it as an Rds file and load it automatically, 
+#### it's faster this way ####
+
+# rf <- caret::train(y ~ .,
+#                        data = train, 
+#                        method = "rf",
+#                        trControl = cntr, 
+#                        tuneGrid= tunegrid,
+#                        allowParallel = T)
+# saveRDS(rf, "rf_model.rds")
+
+rf <- readRDS("rf_model.rds")
+
+#stopCluster(cl)
+```
+
+```{r}
+train_pred = predict(rf, newdata = train)
+test_pred = predict(rf, newdata = test)
+
+print(paste0('Training RMSE: ', (rmse(train$y,train_pred)),'  ',
+             'Test RMSE: ', (rmse(test$y, test_pred)),'  ',
+             'Training MAE: ', (mae(train$y,train_pred)),'  ',
+             'Test MAE: ', (mae(test$y, test_pred))
+             )
+      )
+RF <- c(rmse(test$y, test_pred),mae(test$y, test_pred),R2(train$y, train_pred))
+```
+
+Altought we can't visualize a the Random Forest *per se*, we can understand the variables importance that occurred in contributing to the model building. In the image below we can in fact clearly see how `failures` is the most relevant variable by far. It is followed by `absences` which, again, it was barely significant in the last robust linear model and, at best, with a very low effect. This leaves us something to think about. Tree Based models, as stated above can better perceive non linear effects and interactions between variables. That may be the case. `Mother's education level` is again very important as well as time spent `going out` and `study time` and, unexpectedly, `Weekend alcholic use`. Some of the variables that we treated as very relevant like `higher` or the `Parents' occupations` are instead down below the rank.
+
+```{r}
+plot(varImp(rf))
+```
+
+Let's finally produce a table to compare all the models
+
+```{r}
+test_pred = predict(model, newdata = test)
+train_pred = predict(model, newdata = train)
+OLS <- c(rmse(test$y, test_pred),mae(test$y, test_pred),R2(train$y, train_pred))
+test_pred = predict(m_stepwise, newdata = test)
+train_pred = predict(m_stepwise, newdata = train)
+Stepwise <- c(rmse(test$y, test_pred),mae(test$y, test_pred),R2(train$y, train_pred))
+test_pred = predict(lasso, newdata = test)
+train_pred = predict(lasso, newdata = train)
+LASSO <- c(rmse(test$y, test_pred),mae(test$y, test_pred),R2(train$y, train_pred))
+test_pred = predict(robust, newdata = test)
+train_pred = predict(robust, newdata = train)
+Robust <- c(rmse(test$y, test_pred),mae(test$y, test_pred),R2(train$y, train_pred))
+
+metrics <- data.frame(OLS,Stepwise,LASSO,Robust,TREE,RF)
+row.names(metrics) <- c("RMSE","MAE","R2")
+metrics
+```
+
+## Conclusions Part I
+
+What we can learn from this final chapter of this Assignment is that Linear Models and Tree based models, as stated above, can better perceive non linear effects and interactions between variables. That, in fact, may be the case since we saw a coherence among linear models in selecting important variables and a different but also coherent fashion for what it concerns the tree based models.
+
+Talking about performances, the Linear model and Tree models do not differ that much. We have the LASSO that it's the best performative among the linear models but it's also better than the decision tree for what it concerns R2. Both Tree and the Random Forest, though, performs better in both MAE and RMSE with the Random Forest that clearly outperforms all the other models in everything. This is nothing shocking as it was largely expected.
+
+\newpage
+
+# PART II: UNSUPERVISED LEARNING
+
+Now that we're done with Inference and Prediction, in this second part of this work we are going to apply some unsupervised learning techniques on our dataset to try to discover some useful insight.
+
+The characteristic of our response variable, as stated in the first part of the assignment, let us space in deciding how to treat and proceed our data analysis. Let's recall previously that we suggested 3 alternative ways to go ahead:
+
+1.  Binary classification\
+
+    -   y \> 10: pass\
+    -   y \< 10: fail
+
+2.  five-level classification based on Erasmus grade conversion system\
+
+    -   16-20: very good\
+    -   14-15: good\
+    -   12-13: satisfactory\
+    -   10-11: sufficient\
+    -   0-9 : fail
+
+3.  Regression (Predicting y)
+
+In First Assignment we proceeded with the third option because we thought more important to exploit interpretable models to make some inference.
+
+In this second Assignment, though, it could be interesting to exploit unsupervised techniques to check whether our data alone, i.e. without none of the `grade` variables (G1,G2,G3), are capable to grasp the dimensional difference between the "groups" of students.
+
+It would be interesting, though, if our clustering methods could, alone, be able to divide and cluster all of our students in 2 different groups, the ones who pass and the ones who fail.
+
+To do that we need to reload our original dataset without any transformation applied and starting all over again. First, we're going to apply a K-means algorithm and then a Hierachical Clustering.
+
+```{r, include=FALSE, message=FALSE}
+library(grid)
+library(gridExtra)
+library(cluster)
+library(factoextra)
+library(png)
+library(dendextend)
+
+df <- read_csv("data/student.csv")
+df$sex <- as.factor(df$sex)
+df$address<- as.factor(df$address)
+df$famsize<- as.factor(df$famsize)
+df$Pstatus <- as.factor(df$Pstatus)
+df$Mjob<- as.factor(df$Mjob)
+df$Fjob<- as.factor(df$Fjob)
+df$reason<- as.factor(df$reason)
+df$guardian<- as.factor(df$guardian)
+df$schoolsup<- as.factor(df$schoolsup)
+df$famsup<- as.factor(df$famsup)
+df$paid<- as.factor(df$paid)
+df$activities<- as.factor(df$activities)
+df$nursery<- as.factor(df$nursery)
+df$higher <- as.factor(df$higher)
+df$internet <- as.factor(df$internet)
+df$romantic <- as.factor(df$romantic)
+df$school <- NULL
+G1 <- df$G1
+G2 <- df$G2
+```
+
+## K Means
+
+K-means clustering is the most commonly used unsupervised machine learning algorithm for partitioning a given data set into a set of k groups (i.e. k clusters), where k represents the number of groups pre-specified by the analyst. It classifies objects in multiple groups (i.e., clusters), such that objects within the same cluster are as similar as possible (i.e., high intra-class similarity), whereas objects from different clusters are as dissimilar as possible (i.e., low inter-class similarity). In k-means clustering, each cluster is represented by its center (i.e, centroid) which corresponds to the mean of points assigned to the cluster.
+
+```{r}
+y <-cut(df$G3, seq(0,20,4), labels=c("F","D","C","B","A"),include.lowest=T)
+```
+
+```{r}
+dfnum <- df %>%
+  correlation() %>%
+  summary() 
+
+dfnums <- append(dfnum$Parameter,'G3')
+dfnum <- as.data.frame(scale(df[dfnums]))
+df_votefree <- dfnum[,-c(14,15,16)]
+describe_distribution(dfnum[,-c(14,15,16)])
+```
+
+First things first, we need to purge our dataset from categorical variables because they're not supported by K means algorithm, then we need to rescale all of our numerical variables as we've done in the table above. All the variables have 0 mean and 1 standard deviation.
+
+After this preliminary processing, we can proceed further in capturing the (dis)similarity between the observations since the goal of clustering methods is exactly classify data samples into groups of similar objects. Through an enhanced distant matrix that use by default "euclidean distance (but other alternatives are available) we can visualize the data.
+
+```{r, fig.width=7, fig.height=4.5}
+set.seed(42)
+sample <- createDataPartition(y = y, p=0.95, list = F)
+df_sample <-  dfnum[-sample,]
+y_sample <- y[-sample]
+distance <- get_dist(df_sample)
+d_1 <- fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"),show_labels = F)
+df_sample_2 <-  df_votefree[-sample,]
+y_sample <- y[-sample]
+distance <- get_dist(df_sample_2)
+d_2 <- fviz_dist(distance, gradient = list(low = "#00AFBB", mid = "white", high = "#FC4E07"),show_labels = F)
+
+annotate_figure(ggarrange(d_1,d_2,labels = c("G1,G2,G3 included","G1,G2,G3 excluded")),
+                top = text_grob("", color = "black", face = "bold", size = 14),
+                fig.lab = "Distant Matirces", fig.lab.face = "bold")
+```
+
+In the figure above we can see the dissimilarity matrices computed for both our dataset with our "response" variables included and excluded. Important: - The two matrices seem not to differ that much. This means that a clustering algorithm could really be able to detect the right cluster of students based on the information provided (that are not the "grades").
+
+Here we will group the data into two clusters (centers = 2). The `kmeans` function also has an `nstart` option that attempts multiple initial configurations and reports on the best one. For example, adding `nstart` = 25 will generate 25 initial configurations. This approach is often recommended.
+
+```{r}
+k2 <- kmeans(df_sample, centers = 2, nstart = 25)
+```
+
+The output of k-means is a list with several bits of information. The most important being:
+
+-   cluster: A vector of integers (from 1:k) indicating the cluster to which each point is allocated.
+-   centers: A matrix of cluster centers.
+-   totss: The total sum of squares.
+-   withinss: Vector of within-cluster sum of squares, one component per cluster.
+-   tot.withinss: Total within-cluster sum of squares, i.e. sum(withinss).
+-   betweenss: The between-cluster sum of squares, i.e. $totss-tot.withinss$.
+-   size: The number of points in each cluster.
+
+Th pe following image provides a nice illustration of the clusters. If there are more than two dimensions (variables) the function will automatically perform Principal Component Analysis (PCA) and plot the data points according to the first two principal components that explain the majority of the variance.
+
+```{r}
+fviz_cluster(k2, data = df_sample_2)
+```
+
+Because the number of clusters (k) must be set before we start the algorithm, it is often advantageous to use several different values of k and examine the differences in the results. We can execute the same process for 3, 4, and 5 clusters, and the results are shown in the figure:
+
+```{r,fig.align='center',fig.width=7}
+k3 <- kmeans(df_sample_2, centers = 3, nstart = 25)
+k4 <- kmeans(df_sample_2, centers = 4, nstart = 25)
+k5 <- kmeans(df_sample_2, centers = 5, nstart = 25)
+
+# plots to compare
+p1 <- fviz_cluster(k2, geom = "point", data = df_sample_2) + ggtitle("k = 2")
+p2 <- fviz_cluster(k3, geom = "point",  data = df_sample_2) + ggtitle("k = 3")
+p3 <- fviz_cluster(k4, geom = "point",  data = df_sample_2) + ggtitle("k = 4")
+p4 <- fviz_cluster(k5, geom = "point",  data = df_sample_2) + ggtitle("k = 5")
+
+library(gridExtra)
+grid.arrange(p1, p2, p3, p4, nrow = 2)
+```
+
+## Determining Optimal Clusters
+
+We recall that it is scientist's prerogative to specify the number of clusters to use; preferably they would like to use the optimal number of clusters. To aid in this scope, we will explore the following two popular methods for determining the optimal clusters:
+
+-   Elbow method
+-   Silhouette method
+
+Recall that, the basic idea behind cluster partitioning methods, such as k-means clustering, is to define clusters such that the total intra-cluster variation (known as total within-cluster variation or total within-cluster sum of square) is minimized. The Elbow method is an heuristics consisting of plotting the explained variation as a function of the number of clusters, and picking the elbow of the curve as the number of clusters to use.
+
+As we can see in the figure below is not always that easy as no clear "elbow" could be spotted by human sight.
+
+```{r,fig.align='center'}
+set.seed(42)
+
+k <- 15 
+
+wss<-sapply(1:k ,function(k){kmeans(df_votefree,k,nstart=50,iter.max=15)$tot.withinss})
+
+plot(1:k, wss, type="b", pch=18, xlab="Number of clusters K", ylab="Total within-clusters sum of squares", col="orange") 
+```
+
+The decision of what number of cluster to choose stay unclear. Therefore we move on the next approach.
+
+## Average Silhouette Method
+
+In short, the average silhouette approach measures the quality of a clustering. That is, it determines how well each object lies within its cluster. A high average silhouette width indicates a good clustering. The average silhouette method computes the average silhouette of observations for different values of k. The optimal number of clusters k is the one that maximizes the average silhouette over a range of possible values for k.
+
+The silhouette value is a measure of how similar an object is to its own cluster (cohesion) compared to other clusters (separation). The silhouette ranges from -1 to +1, where a high value indicates that the object is well matched to its own cluster and poorly matched to neighboring clusters.
+
+Here our silhouette values for different values of k.
+
+```{r fig.align='center'}
+fviz_nbclust(df_votefree, kmeans, method = "silhouette")
+```
+
+It's definitely easier to choose our right number of cluster (which is automatically highlighted).
+
+We're going to replot our graphical representation with our full dataset with 2K as suggested by the Silhouette Method.
+
+```{r}
+#kmeans2 <- kmeans(df_votefree,2)
+ris2 <- eclust(df_votefree,"kmeans",k=2)
+avg_s_2 <- fviz_silhouette(ris2) + labs(title= "K = 2",
+                                        subtitle= " Avg Silhoutte width:")
+```
+
+Below we can also observe a representation of the Silhouette Method itself, with the two cluster both largely above the zero value.
+
+```{r}
+avg_s_2
+```
+
+```{r}
+final <- kmeans(df_votefree, 2, nstart = 25)
+```
+
+Finally we can summarize all our variables with in our two clusters:
+
+```{r}
+df_votefree %>%
+  mutate(Cluster = final$cluster) %>%
+  group_by(Cluster) %>%
+  summarise_all("mean")
+```
+
+We can easily spot that the first cluster is associated with the "Good Performance" students as we already know the effects of the single variables on the student performance. There is no single variable that is wrongly classified therefore we can successfully claim that given our dataset, the K mean algorithm - without any help from the "responses" variables - clearly defines a boundary between good and bad performative students. This is quite an achievement.
+
+<!-- ## Hierarchical Clustering -->
+
+<!-- Lastly, we will try to do the same thing done in the previous paragraph with k mean, with Hierachical Clustering and on the 5 classes response variable. -->
+
+<!-- The reason we changed algorith is that hierachical clustering allows us to use also categorical data, thus avoiding to waste useful information. -->
+
+<!-- We can implemet this through **Gower's distance**. -->
+
+<!-- This distance can be used to measure how different two records are and it is always a number between 0 (identical) and 1 (maximally dissimilar).  -->
+
+<!-- It is computed as the average of partial dissimilarities across individuals. -->
+
+<!-- ```{r} -->
+
+<!-- cat <- names(dfnums) -->
+
+<!-- categ <- df[!names(df) %in% cat] -->
+
+<!-- hc_df <- cbind(categ,df[dfnums]) -->
+
+<!-- head(hc_df) -->
+
+<!-- ``` -->
+
+<!-- We then reload the original dataset with the categorical variables AND with the numerical variables as shown above. -->
+
+<!-- ```{r} -->
+
+<!-- # Gower distance works for mixed variables -->
+
+<!-- Dissim_mat <- daisy(hc_df, metric="gower") -->
+
+<!-- # Compute with agnes -->
+
+<!-- hcs <- agnes(Dissim_mat, method = "complete") -->
+
+<!-- # Agglomerative coefficient -->
+
+<!-- hcs$ac -->
+
+<!-- ``` -->
+
+<!-- The agglomerative coefficient is the average of all 1 - m(i). It can also be seen as the average width (or the percentage filled) of the banner plot. -->
+
+<!-- The `agnes` function can also get the agglomerative coefficient, which measures the amount of clustering structure found (values closer to 1 suggest strong clustering structure). -->
+
+<!-- ```{r} -->
+
+<!-- # methods to assess -->
+
+<!-- m <- c( "average", "single", "complete", "ward") -->
+
+<!-- names(m) <- c( "average", "single", "complete", "ward") -->
+
+<!-- # function to compute coefficient -->
+
+<!-- ac <- function(x) { -->
+
+<!--   agnes(Dissim_mat, method = x)$ac -->
+
+<!-- } -->
+
+<!-- map_dbl(m, ac) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- hc <- agnes(Dissim_mat, method = "ward") -->
+
+<!-- pltree(hc, cex = 0.6, hang = -1, main = "Dendrogram of agnes") -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- # # Create two dendrograms -->
+
+<!-- #  -->
+
+<!-- # sub_grp <- cutree(hc, k = 5) -->
+
+<!-- #  -->
+
+<!-- # # Number of members in each cluster -->
+
+<!-- # hc_dfn <- hc_df %>% -->
+
+<!-- #   mutate(cluster = sub_grp) -->
+
+<!-- ``` -->
+
+<!-- ```{r} -->
+
+<!-- # y <- cut(df$G3, seq(0,20,4), labels=c(3,4,5,1,2), include.lowest=T) -->
+
+<!-- #  -->
+
+<!-- # confusionMatrix(as.factor(hc_dfn$cluster),  as.factor(y)) -->
+
+<!-- ``` -->
