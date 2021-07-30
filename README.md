@@ -1,1 +1,3 @@
-# Students_Performance
+# Students Performance Analysis
+
+In the first part of this paper we are going to perform a regression analysis on a dataset concerning students performances in secondary school in Portugal. Our goal is to find the variables that most explain the variances, understand how and possibly why this would be the case. To achieve this goal we will use with different models starting from the basic linear regression and going on selecting the best features with a stepwise selection model, a LASSO and finally a Robust regresssion. Then we will try to obtain additional informative power thanks to two Tree Based models. In the second part of the assignment we will instead see how a simple K means algorithm can well divide the dataset in two clusters representing good and bad performative students.
